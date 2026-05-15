@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+
+# Local Claude Code settings (per-user MCP enablement etc.)
+.claude/settings.local.json
+
+# Auth caches written by scripts
+.auth/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Env / secrets
+.env
+.env.*
+
+# Logs
+*.log
+
+# Generated outputs (in case you run the skill from inside this folder during dev)
+*-report.md
+*-funnels.csv
+*-ad-pages.csv

@@ -1,0 +1,26 @@
+{
+  "skill_name": "competitors-w2w-research",
+  "evals": [
+    {
+      "id": 0,
+      "name": "app-store-url-main-flow",
+      "prompt": "Research the W2W funnels for the Zero fasting tracker app: https://apps.apple.com/us/app/zero-fasting-tracker/id1168348542 . I want a full inventory of what they're running on Facebook ads — every funnel URL, statuses, FB ad pages, and the tech stack on each funnel.",
+      "scope": "full",
+      "expected_output": "Full pipeline: iTunes lookup → keyword/domain extraction → Phase 0.5 gate sim → FB Page search via Playwright → relevance flagging → Phase 1.5 gate sim → deep ad scrape → funnel + status classification → tech-stack detection → report.md + 2 CSVs (funnels, ad-pages) + state.json + run summary, all in the outputs dir."
+    },
+    {
+      "id": 1,
+      "name": "funnel-url-resolve-to-app",
+      "prompt": "Hey, I keep seeing ads for https://www.noom.com in my feed. Can you figure out what app this is and audit their funnel inventory? Want to know everything they're running on FB ads and the tech stack on every funnel.",
+      "scope": "phase_-1_through_0_5",
+      "expected_output": "Phase -1 + Phase 0 + Phase 0.5 only: funnel page fetched, ToU/Privacy inspected for entity, iTunes Search for entity → candidate apps presented (autonomously the agent picks the most plausible Noom app), state renamed from unlinked- to noom slug, Phase 0 keyword/domain extraction, Phase 0.5 gate simulated. No FB scraping for this eval."
+    },
+    {
+      "id": 2,
+      "name": "app-store-url-less-known",
+      "prompt": "Can you research the funnels of Impulse Brain Training? https://apps.apple.com/us/app/impulse-brain-training/id1451295827 — want every funnel they advertise, with status, the FB ad pages running each, and the tech stack on each funnel.",
+      "scope": "phase_0_through_0_5",
+      "expected_output": "Phase 0 + Phase 0.5 only: iTunes lookup for Impulse Brain Training, keyword extraction covering the brand name and brain-training niche, domain discovery, Phase 0.5 gate simulated. No FB scraping for this eval."
+    }
+  ]
+}
