@@ -58,8 +58,12 @@ If variant detection did not fire for any hostname in this run, omit these colum
 **`Page URL`** — the full FB Ads Library Page-view URL filtered to active ads, sorted by total_impressions desc, country=ALL. Format:
 
 ```
-https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=<PAGE_ID>
+https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&is_targeted_country=false&media_type=all&search_type=page&sort_data[direction]=desc&sort_data[mode]=total_impressions&view_all_page_id=<AD_LIBRARY_PAGE_ID>
 ```
+
+**The `view_all_page_id` value MUST be the Ad Library Page ID, not the profile ID** — they are different numeric namespaces in FB. Read it from `state.phase_2.iterations[<last>].ad_pages_deep_scraped[].view_all_page_id` (resolved in `references/flow.md` § Phase 2 step 5.5). Do NOT substitute the legacy `page_id` field — that's the profile ID, and it produces silent failures (empty "No ads match" page or unrelated Page rendered). Background: `references/fb-ads-library.md` § "Page-ID namespaces — profile ID ≠ Ad Library Page ID".
+
+If `view_all_page_id_resolution = "keyword_fallback"` for a Page (Phase 2 step 5.5 could not resolve the Ad Library Page ID), write the keyword-search fallback URL described in `references/flow.md` § Phase 2 step 5.5(c) into this column instead, and add to the row's `Notes` cell: `Page URL is a keyword-search fallback; Ad Library Page ID could not be resolved.`
 
 Do NOT use the Page's vanity URL (e.g. `facebook.com/<brand>`) — the audit-quality link is the Ads Library URL that opens directly on that Page's ad inventory.
 
@@ -122,7 +126,7 @@ page_name,page_id,page_url,status,active_ads_fb_ui,active_ads_script,last_ad_lau
 - Empty lists: write `` (empty cell) in markdown, `""` (empty quoted string) in CSV.
 - `uncertain` is one word, lowercase, in any text cell.
 - Encode CSV as UTF-8, with `\r\n` line endings, RFC 4180 quoting (double-quotes around fields containing comma, quote, or newline; embedded quotes doubled).
-- Page URLs in the Facebook ad pages table (and `ad-pages.csv`) MUST use the canonical FB Ads Library Page-view URL with `active_status=active`, `country=ALL`, `search_type=page`, `sort_data[direction]=desc`, `sort_data[mode]=total_impressions`, and `view_all_page_id=<PAGE_ID>`. Build this URL programmatically from the captured `page_id` rather than copying whatever URL the search results listed.
+- Page URLs in the Facebook ad pages table (and `ad-pages.csv`) MUST use the canonical FB Ads Library Page-view URL with `active_status=active`, `country=ALL`, `search_type=page`, `sort_data[direction]=desc`, `sort_data[mode]=total_impressions`, and `view_all_page_id=<AD_LIBRARY_PAGE_ID>`. The Page ID **must be the resolved `view_all_page_id` field** (`state.phase_2.iterations[<last>].ad_pages_deep_scraped[].view_all_page_id`) — do NOT write the legacy `page_id` (profile ID) value even if it appears to work for some Pages. Build this URL programmatically rather than copying whatever URL the search results listed. Background: `references/fb-ads-library.md` § "Page-ID namespaces — profile ID ≠ Ad Library Page ID".
 
 ## What NOT to add
 

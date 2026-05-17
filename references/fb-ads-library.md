@@ -19,6 +19,61 @@ Verified query parameters (May 2026):
 | `view_all_page_id` | numeric Page ID | Lists all ads from one Page |
 | `search_type` | `keyword_unordered` \| `keyword_exact_phrase` \| `page` | `page` returns Pages, not ads — use this for Phase 1's broad sweep |
 
+## Page-ID namespaces — profile ID ≠ Ad Library Page ID
+
+Facebook uses **two different numeric ID namespaces** for the same advertiser:
+
+| Namespace | Where it works | Where it does NOT |
+|---|---|---|
+| **Profile ID** (a.k.a. `userID`) — what you see in `facebook.com/profile.php?id=<id>`, the dedup key for Pages in our state (the `page_id` field), and what FB returns from page-search result-card hrefs | Navigating to the Page profile (`facebook.com/<id>`), `userID:"<id>"` in page source | The Ad Library's `view_all_page_id` URL parameter (sometimes works, often does not) |
+| **Ad Library Page ID** — what FB Ad Library uses to key its advertiser-scoped views, stored in our state as `view_all_page_id` | `view_all_page_id=<id>` URLs — always renders the Page's ads if the Page advertises | `facebook.com/profile.php?id=<id>` (gives a "page not found" or unrelated entity) |
+
+The two IDs **identify the same advertiser** but are different numbers. They coincide for ~45% of Pages in our 8-project sample (2026-05-15) and diverge for the other ~55%. There is no pattern that tells you which case you're in without testing.
+
+**Implication for the audit**: never write a `view_all_page_id` URL using the profile ID without resolving (or sanity-checking) that it's the Ad Library Page ID first. The empty-state page that FB shows when the IDs mismatch is silent — country=ALL, active_status=all, logged-in user, real Page that is currently running ads → still "No ads match your search criteria." (In other cases the URL silently rewrites and renders an unrelated Page entirely.)
+
+### How to resolve the Ad Library Page ID from the profile ID
+
+Two methods, in priority order:
+
+**Method 1 — via an evidence ad ID (preferred)**:
+
+For each Page, take any one of the ad archive IDs (`ad_archive_id` / `libId` / `lib_id`) captured in Phase 2 scrape data. Fetch the ad-detail HTML (auth-required) and read the `page_id` field from the embedded initial state:
+
+```js
+async function resolveAdLibraryPageId(evidenceAdId) {
+  const res = await fetch(`https://www.facebook.com/ads/library/?id=${evidenceAdId}`,
+                          {credentials: 'include'});
+  const html = await res.text();
+  return html.match(/"page_id"\s*:\s*"?(\d{6,20})"?/)?.[1] ?? null;
+}
+```
+
+Run in parallel (chunks of 6–8) for the full Page list — a 33-Page audit resolves in <10 seconds.
+
+**Method 2 — pre-flight check on the existing URL** (use when there are no evidence ad IDs for the Page, or to verify Method 1's output):
+
+```js
+async function viewAllPageIdWorks(candidateId) {
+  const res = await fetch(`https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&view_all_page_id=${candidateId}`,
+                          {credentials: 'include'});
+  const html = await res.text();
+  return html.length > 800000;   // empty-state ≈709k, working ≈830k+
+}
+```
+
+The "No ads match your search criteria" phrase is rendered client-side and is NOT in the initial HTML — do not grep for it. The 800k preloaded-data signal is the reliable check.
+
+**Fallback when neither method yields a working ID** (rare: Pages with zero captured evidence and a profile ID that also doesn't work):
+
+Use FB Ad Library keyword search by Page name:
+
+```
+https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&q=<URL-ENCODED-NAME>&search_type=keyword_unordered
+```
+
+Mark the row's resolution as `keyword_fallback`. Phase 4 will write this keyword-search URL into the `Page URL` column and add a note in the `Notes` column that the link is a fallback keyword search, not a Page-scoped view, because Ad Library Page ID resolution failed.
+
 ## Two URL patterns this skill uses
 
 **Page search** (Phase 1, broad sweep):
@@ -167,6 +222,8 @@ Page IDs no longer appear consistently in result-card URL parameters (`view_all_
 1. Inline JSON on the Page's profile or Ads Library view: search the page source for `"pageID":"<numeric>"` or `"userID":"<numeric>"`. `pageID` is the more authoritative when both are present.
 2. The href of an "ads" link on a result card — extract the `view_all_page_id` query parameter.
 3. From a vanity URL: navigate to `https://www.facebook.com/<vanity>/about` (or just `/<vanity>`) and grep the source for the two patterns above.
+
+> **Note on namespaces:** the ID extracted here is the **profile ID** (stored in state as `page_id`). It is the right value for dedup, profile-URL navigation, and as the foreign key between Phase 1 and Phase 2. It is **not** always the same as the **Ad Library Page ID** (the value that goes into the `view_all_page_id=` URL parameter and is stored in state as `view_all_page_id`). See § "Page-ID namespaces — profile ID ≠ Ad Library Page ID" above for the resolution method that converts one to the other. Phase 2 step 5.5 (`references/flow.md`) does this conversion before any Page URL is rendered.
 
 Use `browser_evaluate` with a small JS snippet to do this — pass the result back as JSON.
 

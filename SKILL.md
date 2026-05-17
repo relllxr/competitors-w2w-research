@@ -113,8 +113,10 @@ Step 0b   PLAYWRIGHT MCP CHECK (deferred — happens at Phase 1 entry)
 Phase 1   Broad FB Ad-page discovery + relevance flagging               ← no deep scrape
           (FB session check at entry — prompt user to log in if needed)
           Enumerate ALL matching Pages — do not stop at the first hit
+          (profile-ID/page_id captured here; Ad Library Page ID resolved in Phase 2)
 Phase 1.5 USER GATE — confirm ad-page list (first execution only)       ← HARD STOP
 Phase 2   Deep ad scraping (last 90 days), funnel extraction, status
+          (also: resolve canonical Ad Library Page ID — Phase 2 step 5.5)
 Loop      If Phase 2 found new domains, restart Phase 1 with them
           Termination: no new domains/pages discovered, OR 5 iterations max
 Phase 3   Tech-stack detection per funnel
@@ -209,6 +211,7 @@ All scripts print JSON to stdout. Parse the JSON; don't try to read free-text ou
 9. **Treating deep-link redirectors as ambiguous.** Hosts like `*.onelink.me`, `*.app.link`, `*.go.link`, `*.adj.st`, `*.smart.link` (AppsFlyer / Branch / Adjust / Singular / etc.) are app-install deep-link redirectors. Classify the destination as `app`, not `w2w` and not `uncertain`. See `references/status-classification.md`.
 10. **Adding interpretation to the report.** The report is observation-only. Save analysis for a separate conversation if the user asks for it later.
 11. **Treating gates as overrideable by session-level efficiency instructions.** Phase 0.5 and Phase 1.5 are HARD STOPS regardless of "be efficient" / "don't pause" instructions. Skipping them is the documented #1 audit failure mode.
+12. **Writing `view_all_page_id=<profile_id>` to the report.** FB Ads Library uses two separate numeric ID namespaces for each advertiser — a profile ID (visible in profile-anchor hrefs and stored in state as `page_id`) and an Ad Library Page ID (only honored by `view_all_page_id=` URLs and stored in state as `view_all_page_id`). They coincide for ~45% of Pages and diverge for ~55%, with no pattern that tells you which case you're in. Writing the profile ID into the report's `Page URL` column produces silent failures: the row's Page name displays, but the link lands on FB's empty "No ads match your search criteria" state OR — worse — silently rewrites to a different brand's Page entirely (Re8 Clever audit, 2026-05-16). Always read the Ad Library Page ID from `state.phase_2.iterations[<last>].ad_pages_deep_scraped[].view_all_page_id` (resolved in Phase 2 step 5.5 per `references/fb-ads-library.md` § "Page-ID namespaces — profile ID ≠ Ad Library Page ID"). If `view_all_page_id_resolution = "keyword_fallback"`, fall back to the keyword-search URL per `references/flow.md` § Phase 2 step 5.5(c).
 
 ## Authentication (Facebook)
 

@@ -73,6 +73,8 @@ State lives at `<app-slug>-state.json` (or `unlinked-<host>-state.json`) in the 
         "ad_pages_deep_scraped": [
           {
             "page_id": "1234567890",
+            "view_all_page_id": "297707747768612",
+            "view_all_page_id_resolution": "evidence_ad",
             "fb_ui_active_ads_count": 12,
             "script_active_ads_count": 12,
             "last_ad_launched": "2026-05-10",
@@ -130,6 +132,12 @@ State lives at `<app-slug>-state.json` (or `unlinked-<host>-state.json`) in the 
   }
 }
 ```
+
+**Field notes (Phase 2 `ad_pages_deep_scraped[]`):**
+
+- `page_id` — the profile ID / userID. The dedup key for Pages across Phase 1 and Phase 2. Captured by the Phase 1 DOM walker from result-card `view_all_page_id=` hrefs or inline `"pageID":"<numeric>"` JSON. **Do NOT plug this into the report's `Page URL` column** — see `view_all_page_id` below.
+- `view_all_page_id` — the canonical Ad Library Page ID, used in the report's `Page URL` column. Resolved in Phase 2 step 5.5 per `references/fb-ads-library.md` § "Page-ID namespaces — profile ID ≠ Ad Library Page ID". May equal `page_id` for ~45% of Pages; differs for ~55%. May be `null` if neither resolution method succeeded (in which case Phase 4 writes a keyword-search fallback URL).
+- `view_all_page_id_resolution` — provenance of the value above. Enum: `"evidence_ad"` (resolved via Method 1 using one of this Page's `ad_archive_id`s), `"profile_id_matches"` (Method 2 confirmed the profile ID itself works as a `view_all_page_id`), or `"keyword_fallback"` (neither method yielded a working ID — Phase 4 writes a keyword-search URL with a notes annotation).
 
 When a phase completes, write its block. When a phase fails partway, write what you have plus a `partial: true` marker so the next run can resume.
 
@@ -306,6 +314,34 @@ For each approved Page (`state.phase_1_5.approved_page_ids` plus any added by lo
 5. **Tag each ad** with `destination_kind`:
    - `app` if the resolved host is `apps.apple.com` or `play.google.com`, OR if the host is a known app-install deep-link redirector (`*.onelink.me`, `*.app.link`, `*.go.link`, `*.adj.st`, `*.smart.link`, `app.adjust.com`). These are not funnels — they deep-link to the app store.
    - `w2w` otherwise (a real web destination — the funnel).
+5.5. **Resolve the canonical Ad Library Page ID for each Page** — populate `view_all_page_id` and `view_all_page_id_resolution`.
+
+   FB Ads Library uses two distinct numeric ID namespaces for the same advertiser. The `page_id` we captured in Phase 1 is the **profile ID** (the dedup key). The Ad Library's per-Page view (`?view_all_page_id=<id>`) only honors a **separate** Ad Library Page ID, and writing the profile ID into that slot produces silent failures (empty "No ads match" page OR a different brand's Page rendered). They coincide for ~45% of Pages and diverge for ~55% — no pattern. Full namespace explanation: `references/fb-ads-library.md` § "Page-ID namespaces — profile ID ≠ Ad Library Page ID".
+
+   For each Page in `ad_pages_deep_scraped`:
+
+   a. **If the Page has ≥1 captured `ad_archive_id`** (the common case after Step 2.A and 2.B) → run **Method 1** (HTML-fetch via evidence ad ID). Use any one of the Page's ad IDs:
+
+      ```
+      fetch('https://www.facebook.com/ads/library/?id=<ad_archive_id>', {credentials: 'include'})
+      ```
+
+      Read the response HTML and extract `/"page_id"\s*:\s*"?(\d{6,20})"?/`. Set `view_all_page_id = <resolved_id>`, `view_all_page_id_resolution = "evidence_ad"`. Parallelize across Pages in chunks of 6–8 — a 30-Page audit completes in under 10 seconds.
+
+   b. **Else** (Page has zero captured ads — rare for candidates that passed Phase 1.5) → run **Method 2** (pre-flight check on the profile ID):
+
+      ```
+      fetch('https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&view_all_page_id=<page_id>', {credentials: 'include'})
+      ```
+
+      If `html.length > 800000` → the profile ID happens to coincide with the Ad Library Page ID. Assign `view_all_page_id = page_id`, `view_all_page_id_resolution = "profile_id_matches"`.
+
+      Else → `view_all_page_id = null`, `view_all_page_id_resolution = "keyword_fallback"`. Note: do NOT grep for "No ads match your search criteria" — that string is rendered client-side and is not in the initial HTML. The 800k preloaded-data signal is the reliable check.
+
+   c. **Phase 4 behaviour** when `view_all_page_id_resolution = "keyword_fallback"`: write a keyword-search URL of the form `https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&q=<URL-ENCODED-NAME>&search_type=keyword_unordered` into the `Page URL` column instead of the per-Page view, and add to the row's `notes` column: `Page URL is a keyword-search fallback; Ad Library Page ID could not be resolved.`
+
+   See `references/fb-ads-library.md` § "How to resolve the Ad Library Page ID from the profile ID" for the full method specifications and the JS snippets.
+
 6. **Compute the Page's ad_types column**: `app` if all ads are app, `w2w` if all are w2w, `both` if mixed.
 7. **Compute the Page's status**:
    - If `fb_ui_active_ads_count` from Step 2.A is `≥ 1` → **Active**
